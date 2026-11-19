@@ -80,7 +80,12 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent); outlin
 .tpl-edit{position:absolute; top:6px; right:6px; min-height:36px; padding:0 10px; border-radius:999px; font-size:.8rem; font-weight:600; color:var(--muted)}
 .btn:disabled{opacity:.45; cursor:default}
 .ed-list{list-style:none; margin:0; padding:0; background:var(--surface); border:1px solid var(--line); border-radius:var(--r)}
-.ed-list li{display:grid; grid-template-columns:28px 1fr 40px 40px 40px; gap:4px; align-items:center; padding:6px 8px 6px 12px; border-bottom:1px solid var(--line)}
+.ed-list li{display:grid; grid-template-columns:28px 1fr auto; gap:2px 4px; align-items:center; padding:6px 8px 8px 12px; border-bottom:1px solid var(--line)}
+.ed-tools{display:flex}
+.ed-tools .ed-btn{width:40px}
+.ed-sets{grid-column:2 / -1; display:flex; align-items:center; gap:6px; font-size:.85rem; color:var(--muted)}
+.ed-sets b{min-width:22px; text-align:center; color:var(--ink); font-family:var(--display); font-size:1.25rem; font-weight:700}
+.ed-sets .ed-btn{width:36px; height:36px; border:1.5px solid var(--line); color:var(--ink)}
 .ed-list li:last-child{border-bottom:0}
 .ed-list .n{font-family:var(--display); font-weight:600; color:var(--muted); font-size:1.1rem}
 .ed-list b{font-weight:600}
@@ -444,17 +449,23 @@ function idleView() {
       <p class="tnum">${clock(last.finishedAt - last.startedAt)} · ${setCount(last)} sets · ${Math.round(volume(last)).toLocaleString()} kg lifted</p></section>` : ''}`;
 }
 
+function setsOf(ed, x) { return (ed.sets && ed.sets[x]) || (lastFor(x) ? Math.max(1, lastFor(x).sets.length) : 3); }
+
 function editView() {
   const ed = S.edit, existing = templates().some(t => t.id === ed.id);
   const ok = !!(ed.name.trim() && ed.exercises.length), n = ed.exercises.length;
   return `
     <p class="eyebrow">${existing ? 'Edit workout' : 'New workout'}</p>
     <input id="ed-name" class="wk-name" value="${esc(ed.name)}" placeholder="Name it" aria-label="Workout name" maxlength="40">
-    <p class="sync">Add exercises in the order you do them. Sets, weights and rest times carry over from your last session.</p>
-    ${n ? `<ol class="ed-list">${ed.exercises.map((x, i) => `<li><span class="n">${i + 1}</span><b>${esc(x)}</b>
+    <p class="sync">Add exercises in the order you do them. Choose how many sets each exercise gets. Weights and rest times carry over from your last session.</p>
+    ${n ? `<ol class="ed-list">${ed.exercises.map((x, i) => `<li><span class="n">${i + 1}</span><b>${esc(x)}</b><span class="ed-tools">
       <button class="ed-btn" data-act="ed-up" data-i="${i}" aria-label="Move up" ${i ? '' : 'disabled'}>↑</button>
       <button class="ed-btn" data-act="ed-down" data-i="${i}" aria-label="Move down" ${i < n - 1 ? '' : 'disabled'}>↓</button>
-      <button class="ed-btn" data-act="ed-del" data-i="${i}" aria-label="Remove ${esc(x)}">×</button></li>`).join('')}</ol>`
+      <button class="ed-btn" data-act="ed-del" data-i="${i}" aria-label="Remove ${esc(x)}">×</button></span>
+      ${isRun(x) ? '' : `<span class="ed-sets">Sets
+        <button class="ed-btn" data-act="ed-sets" data-i="${i}" data-d="-1" aria-label="One set fewer" ${setsOf(ed, x) <= 1 ? 'disabled' : ''}>−</button>
+        <b class="tnum">${setsOf(ed, x)}</b>
+        <button class="ed-btn" data-act="ed-sets" data-i="${i}" data-d="1" aria-label="One set more" ${setsOf(ed, x) >= 10 ? 'disabled' : ''}>+</button></span>`}</li>`).join('')}</ol>`
       : `<div class="empty"><strong>No exercises yet</strong>Add the first one below.</div>`}
     <button class="add-ex" data-act="open-add">+ Add exercise</button>
     <div class="wk-actions">
@@ -641,8 +652,13 @@ document.addEventListener('click', ev => {
     case 'edit-tpl': { const t = templates().find(x => x.id === b.dataset.id); if (t) { S.edit = clone(t); S.confirmTpl = null; render(); window.scrollTo(0, 0); } break; }
     case 'ed-up': case 'ed-down': { const x = S.edit.exercises, i = +b.dataset.i, j = act === 'ed-up' ? i - 1 : i + 1; [x[i], x[j]] = [x[j], x[i]]; render(); break; }
     case 'ed-del': S.edit.exercises.splice(+b.dataset.i, 1); render(); break;
+    case 'ed-sets': {
+      const nm = S.edit.exercises[+b.dataset.i], v = Math.min(10, Math.max(1, setsOf(S.edit, nm) + +b.dataset.d));
+      S.edit.sets = { ...(S.edit.sets || {}), [nm]: v }; render(); break;
+    }
     case 'ed-save': {
       const list = templates().slice(), t = { ...S.edit, name: S.edit.name.trim() }, i = list.findIndex(x => x.id === t.id);
+      t.sets = Object.fromEntries(t.exercises.map(n => [n, setsOf(S.edit, n)]));
       if (i >= 0) list[i] = t; else list.push(t);
       saveTemplates(list); S.edit = null; render(); flash(`Saved “${t.name}”`); break;
     }
@@ -690,7 +706,7 @@ document.addEventListener('click', ev => {
     case 'open-add': $('#ex-search').value = ''; renderOpts(); $('#sheet').hidden = false; break;
     case 'close-add': $('#sheet').hidden = true; break;
     case 'pick':
-      if (S.edit) { S.edit.exercises.push(b.dataset.name); $('#sheet').hidden = true; render(); break; }
+      if (S.edit) { const nm = b.dataset.name; S.edit.sets = { ...(S.edit.sets || {}), [nm]: setsOf(S.edit, nm) }; S.edit.exercises.push(nm); $('#sheet').hidden = true; render(); break; }
       S.active.exercises.push(newExercise(b.dataset.name)); $('#sheet').hidden = true; touch(); render();
       setTimeout(() => { const cards = document.querySelectorAll('.ex'); cards[cards.length - 1]?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 30); break;
     case 'open-timer': $('#overlay').hidden = false; tick(); break;
