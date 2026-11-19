@@ -555,7 +555,7 @@ function exCard(e) {
 function historyView() {
   const mon = new Date(); mon.setHours(0, 0, 0, 0); mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7));
   const week = S.history.filter(w => w.startedAt >= mon.getTime());
-  const sync = `Saved on this phone and works with no internet. Export a backup now and then so you don't lose anything if you delete the app.
+  const sync = `<b>App version 2</b> · Saved on this phone and works with no internet. Export a backup now and then so you don't lose anything if you delete the app.
     <span class="backup"><button class="btn btn-line" data-act="export">Export backup</button>
     <label class="btn btn-line" for="import-file">Import backup</label><input type="file" id="import-file" accept="application/json,.json" hidden></span>`;
   const head = `<h1>History</h1>
@@ -776,7 +776,13 @@ loadLocal();
 render();
 tick();
 setInterval(tick, 250);
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator) {
+  // When a newer version of the app installs itself, reload once so it shows straight away.
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !reloaded) { reloaded = true; location.reload(); } });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
+}
 </script>
 </body>
 </html>
