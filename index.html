@@ -83,7 +83,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent); outlin
 .ed-list li{display:grid; grid-template-columns:28px 1fr auto; gap:2px 4px; align-items:center; padding:6px 8px 8px 12px; border-bottom:1px solid var(--line)}
 .ed-tools{display:flex}
 .ed-tools .ed-btn{width:40px}
-.ed-sets{grid-column:2 / -1; display:flex; align-items:center; gap:6px; font-size:.85rem; color:var(--muted)}
+.ed-sets{grid-column:2 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; font-size:.85rem; color:var(--muted)}
+.grp{display:inline-flex; align-items:center; gap:6px}
+.ed-sets b.ed-rest{min-width:40px}
+.ed-reps{width:76px; height:36px; border-radius:10px; border:1.5px solid var(--line); background:var(--bg); color:var(--ink); text-align:center; font:inherit; font-size:16px; font-weight:600}
+.target{font-size:.88rem; font-weight:600; color:var(--accent); margin-top:2px}
 .ed-sets b{min-width:22px; text-align:center; color:var(--ink); font-family:var(--display); font-size:1.25rem; font-weight:700}
 .ed-sets .ed-btn{width:36px; height:36px; border:1.5px solid var(--line); color:var(--ink)}
 .ed-list li:last-child{border-bottom:0}
@@ -263,7 +267,7 @@ const TEMPLATES = {
   Pull: ['Deadlift','Pull-up','Barbell Row','Face Pull','Bicep Curl'],
   Legs: ['Back Squat','Romanian Deadlift','Leg Press','Leg Curl','Calf Raise']
 };
-const RESTS = [60,90,120,150,180,240];
+const RESTS = [60,90,120,150,180,210,240];
 const PLATES = [25,20,15,10,5,2.5,1.25];
 
 const $ = s => document.querySelector(s);
@@ -293,11 +297,11 @@ const store = { db: null, uid: null };
 /* ---------- storage ---------- */
 function loadLocal() {
   try { const d = JSON.parse(localStorage.getItem(KEY) || '{}'); S.history = d.history || []; S.active = d.active || null; S.activeAt = d.activeAt || 0;
-    S.templates = d.templates || null; S.templatesAt = d.templatesAt || 0; } catch {}
+    S.templates = d.templates || null; S.templatesAt = d.templatesAt || 0; S.tplVer = d.tplVer || 0; } catch {}
   try { T = JSON.parse(localStorage.getItem(TKEY) || '{}'); } catch { T = {}; }
 }
 function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify({history: S.history, active: S.active, activeAt: S.activeAt,
-  templates: S.templates, templatesAt: S.templatesAt})); } catch {} }
+  templates: S.templates, templatesAt: S.templatesAt, tplVer: S.tplVer})); } catch {} }
 function saveTimer() { try { localStorage.setItem(TKEY, JSON.stringify(T)); } catch {} }
 let activeDebounce, writeChain = Promise.resolve();
 function touch() {
@@ -311,20 +315,43 @@ function touch() {
   }, 700);
 }
 function col() { return store.db.collection(`data/users/${store.uid}`); }
+// Each row: [exercise, target reps, rest in seconds]
+const R = (id, name, rows, sets = {}) => ({ id, name, exercises: rows.map(r => r[0]), sets,
+  reps: Object.fromEntries(rows.filter(r => r[1]).map(r => [r[0], r[1]])),
+  rest: Object.fromEntries(rows.filter(r => r[2]).map(r => [r[0], r[2]])) });
 const MY_ROUTINES = [
-  { id: 't-chest-back-a', name: 'Chest and Back A', exercises: ['Incline Dumbbell Press', 'Machine Chest Press', 'Pec Deck', 'Lateral Pulldown', 'Machine Lateral Raise', 'Seated Back Row'] },
-  { id: 't-arms-a', name: 'Arms A', exercises: ['Bayesian Curl', 'JM Press (Smith)', 'EZ Bar Biceps Curl', 'Overhead Tricep Extension', 'Hammer Curl', 'Machine Shoulder Raises'], sets: { 'Hammer Curl': 2 } },
-  { id: 't-legs', name: 'Legs', exercises: ['Squat', 'Romanian Deadlift', 'Leg Curls', 'Leg Extensions', 'Calf Raises'] },
-  { id: 't-chest-back-b', name: 'Chest and Back B', exercises: ['Flat Barbell Press', 'Machine Chest Press', 'Chest Flys', 'Seated Back Row', 'Lateral Pulldown', 'Machine Lateral Raise'] },
-  { id: 't-arm-b', name: 'Arm B', exercises: ['Machine Preacher Curl', 'Machine Dips', 'Tricep Pushdown', 'Skullcrushers', 'Rear Delt Fly', 'Bayesian Curl'] },
-  { id: 't-running', name: 'Running', exercises: ['Running'] }
+  R('t-chest-back-a', 'Chest and Back A', [['Machine Chest Press', '6–10', 210], ['Seated Row', '8–12', 180], ['Incline Dumbbell Press', '8–12', 180],
+    ['Pec Deck', '10–15', 150], ['Lat Pulldown', '8–12', 150], ['Machine Lateral Raise', '12–15', 150]]),
+  R('t-chest-back-b', 'Chest and Back B', [['Seated Row', '8–12', 180], ['Flat Barbell Press', '5–8', 240], ['Lat Pulldown', '8–12', 150],
+    ['Machine Chest Press', '8–12', 150], ['Machine Lateral Raise', '12–15', 150], ['Pec Deck', '10–15', 150]]),
+  R('t-arms-a', 'Arms A', [['EZ Bar Curl', '8–12', 180], ['Overhead Tricep Extension', '8–12', 180], ['Machine Shoulder Raise', '8–12', 180],
+    ['Incline Dumbbell Curl', '10–15', 150], ['JM Press (Smith)', '8–12', 150], ['Hammer Curl', '10–12', 150]], { 'Hammer Curl': 2 }),
+  R('t-arm-b', 'Arm B', [['Machine Preacher Curl', '10–12', 180], ['Machine Dips', '8–12', 180], ['Rope Tricep Pushdown', '10–15', 150],
+    ['Skullcrushers', '8–12', 150], ['Cable Face Pull', '12–15', 120], ['Incline Dumbbell Curl', '10–15', 150]]),
+  R('t-legs', 'Legs', [['Squat', '5–8', 240], ['Romanian Deadlift', '6–10', 210], ['Leg Curls', '8–12', 180],
+    ['Leg Extensions', '8–12', 180], ['Calf Raises', '10–15', 180]]),
+  R('t-running', 'Running', [['Running']])
 ];
+// Renamed exercises still pick up the weights logged under their old names.
+const ALIAS = { 'lat pulldown': 'lateral pulldown', 'seated row': 'seated back row', 'ez bar curl': 'ez bar biceps curl',
+  'machine shoulder raise': 'machine shoulder raises', 'rope tricep pushdown': 'tricep pushdown', 'cable face pull': 'face pull' };
+const sameEx = (a, b) => { a = a.toLowerCase(); b = b.toLowerCase(); return a === b || ALIAS[a] === b || ALIAS[b] === a; };
+const TPL_VER = 3;
 function defaultTemplates() { return clone(MY_ROUTINES).map(t => ({ ...t, sets: Object.fromEntries(t.exercises.map(n => [n, (t.sets && t.sets[n]) || 3])) })); }
-function templates() { return S.templates || defaultTemplates(); }
+// Older saved routines get the new exercise list, reps and rest times; set counts you changed and your own workouts are kept.
+function migrateTemplates(old) {
+  const fresh = defaultTemplates(), ids = new Set(fresh.map(t => t.id));
+  fresh.forEach(t => { const o = old.find(x => x.id === t.id); if (o && o.sets) t.exercises.forEach(n => { if (o.sets[n]) t.sets[n] = o.sets[n]; }); });
+  return fresh.concat(old.filter(t => !ids.has(t.id)));
+}
+function templates() {
+  if (S.templates && (S.tplVer || 0) < TPL_VER) saveTemplates(migrateTemplates(S.templates));
+  return S.templates || defaultTemplates();
+}
 function saveTemplates(list) {
-  S.templates = list; S.templatesAt = Date.now(); saveLocal();
+  S.templates = list; S.templatesAt = Date.now(); S.tplVer = TPL_VER; saveLocal();
   if (!store.db) return;
-  const body = { list: clone(list), updatedAt: S.templatesAt };
+  const body = { list: clone(list), updatedAt: S.templatesAt, ver: TPL_VER };
   writeChain = writeChain.then(() => store.db.doc(`data/users/${store.uid}/templates`).set(body)).catch(() => {});
 }
 let toastT;
@@ -342,7 +369,7 @@ async function initDb() {
       if ((d.updatedAt || 0) > S.activeAt) { S.active = d.w ? clone(d.w) : null; S.activeAt = d.updatedAt; saveLocal(); if (!typing()) render(); }
     }
     const tp = await db.doc(`data/users/${uid}/templates`).get();
-    if (tp.exists && (tp.data().updatedAt || 0) > S.templatesAt) { S.templates = clone(tp.data().list); S.templatesAt = tp.data().updatedAt; saveLocal(); }
+    if (tp.exists && (tp.data().updatedAt || 0) > S.templatesAt) { S.templates = clone(tp.data().list); S.templatesAt = tp.data().updatedAt; S.tplVer = tp.data().ver || 0; saveLocal(); }
     else if (S.templates && S.templatesAt) saveTemplates(S.templates);
     let first = true;
     col().onSnapshot(snap => {
@@ -364,21 +391,29 @@ function typing() { const a = document.activeElement; return a && a.tagName === 
 /* ---------- workout logic ---------- */
 function lastFor(name) {
   for (const w of S.history) {
-    const ex = w.exercises.find(e => e.name.toLowerCase() === name.toLowerCase());
+    const ex = w.exercises.find(e => sameEx(e.name, name) && e.sets.length);
     if (ex) return { date: w.startedAt, sets: ex.sets, rest: ex.rest };
   }
   return null;
 }
-function newExercise(name, setsWanted) {
-  const barbell = isBarbell(name), run = isRun(name), last = lastFor(name);
-  const n = run ? 1 : setsWanted || (last ? Math.max(1, last.sets.length) : 3);
-  return { id: rid(), name, barbell, run, rest: (last && last.rest) || (barbell ? 150 : 90),
-    sets: Array.from({length: n}, () => run ? { km: '', time: '', done: false } : { kg: '', reps: '', done: false }) };
+// Rest and reps come from the routine; if the exercise isn't in this routine, from any routine that has it.
+function planFor(name, t) {
+  const has = x => x && x.exercises.includes(name);
+  const src = has(t) ? t : templates().find(has);
+  return src ? { sets: src.sets && src.sets[name], rest: src.rest && src.rest[name], reps: src.reps && src.reps[name] } : {};
+}
+function newExercise(name, t) {
+  const barbell = isBarbell(name), run = isRun(name), last = lastFor(name), plan = planFor(name, t);
+  const n = run ? 1 : (t && plan.sets) || (last ? Math.max(1, last.sets.length) : plan.sets || 3);
+  // Weights start at what you lifted last time, set by set.
+  const kgAt = i => { const p = last && (last.sets[i] || last.sets[last.sets.length - 1]); return p && num(p.kg) ? String(p.kg) : ''; };
+  return { id: rid(), name, barbell, run, target: plan.reps || '', rest: plan.rest || (last && last.rest) || (barbell ? 150 : 90),
+    sets: Array.from({length: n}, (_, i) => run ? { km: '', time: '', done: false } : { kg: kgAt(i), reps: '', done: false }) };
 }
 function startWorkout(tplId) {
   const t = templates().find(x => x.id === tplId);
   S.active = { id: 'w-' + Date.now(), name: t ? t.name : 'Workout', startedAt: Date.now(),
-    exercises: (t ? t.exercises : []).map(n => newExercise(n, t.sets && t.sets[n])) };
+    exercises: (t ? t.exercises : []).map(n => newExercise(n, t)) };
   S.tab = 'workout'; S.confirm = null; touch(); render();
 }
 function exById(id) { return S.active && S.active.exercises.find(e => e.id === id); }
@@ -450,6 +485,8 @@ function idleView() {
 }
 
 function setsOf(ed, x) { return (ed.sets && ed.sets[x]) || (lastFor(x) ? Math.max(1, lastFor(x).sets.length) : 3); }
+function restOf(ed, x) { return (ed.rest && ed.rest[x]) || (lastFor(x) && lastFor(x).rest) || (isBarbell(x) ? 150 : 90); }
+function repsOf(ed, x) { return (ed.reps && ed.reps[x]) || ''; }
 
 function editView() {
   const ed = S.edit, existing = templates().some(t => t.id === ed.id);
@@ -457,15 +494,20 @@ function editView() {
   return `
     <p class="eyebrow">${existing ? 'Edit workout' : 'New workout'}</p>
     <input id="ed-name" class="wk-name" value="${esc(ed.name)}" placeholder="Name it" aria-label="Workout name" maxlength="40">
-    <p class="sync">Add exercises in the order you do them. Choose how many sets each exercise gets. Weights and rest times carry over from your last session.</p>
+    <p class="sync">Add exercises in the order you do them. Set how many sets, the reps to aim for and the rest after each set. Weights carry over from your last session.</p>
     ${n ? `<ol class="ed-list">${ed.exercises.map((x, i) => `<li><span class="n">${i + 1}</span><b>${esc(x)}</b><span class="ed-tools">
       <button class="ed-btn" data-act="ed-up" data-i="${i}" aria-label="Move up" ${i ? '' : 'disabled'}>↑</button>
       <button class="ed-btn" data-act="ed-down" data-i="${i}" aria-label="Move down" ${i < n - 1 ? '' : 'disabled'}>↓</button>
       <button class="ed-btn" data-act="ed-del" data-i="${i}" aria-label="Remove ${esc(x)}">×</button></span>
-      ${isRun(x) ? '' : `<span class="ed-sets">Sets
+      ${isRun(x) ? '' : `<span class="ed-sets"><span class="grp">Sets
         <button class="ed-btn" data-act="ed-sets" data-i="${i}" data-d="-1" aria-label="One set fewer" ${setsOf(ed, x) <= 1 ? 'disabled' : ''}>−</button>
         <b class="tnum">${setsOf(ed, x)}</b>
-        <button class="ed-btn" data-act="ed-sets" data-i="${i}" data-d="1" aria-label="One set more" ${setsOf(ed, x) >= 10 ? 'disabled' : ''}>+</button></span>`}</li>`).join('')}</ol>`
+        <button class="ed-btn" data-act="ed-sets" data-i="${i}" data-d="1" aria-label="One set more" ${setsOf(ed, x) >= 10 ? 'disabled' : ''}>+</button></span>
+        <label class="grp">Reps <input class="ed-reps" data-ed-reps="${i}" value="${esc(repsOf(ed, x))}" placeholder="8–12" maxlength="12" aria-label="Target reps for ${esc(x)}"></label>
+        <span class="grp">Rest
+        <button class="ed-btn" data-act="ed-rest" data-i="${i}" data-d="-15" aria-label="15 seconds less rest" ${restOf(ed, x) <= 15 ? 'disabled' : ''}>−</button>
+        <b class="tnum ed-rest">${mmss(restOf(ed, x))}</b>
+        <button class="ed-btn" data-act="ed-rest" data-i="${i}" data-d="15" aria-label="15 seconds more rest" ${restOf(ed, x) >= 600 ? 'disabled' : ''}>+</button></span></span>`}</li>`).join('')}</ol>`
       : `<div class="empty"><strong>No exercises yet</strong>Add the first one below.</div>`}
     <button class="add-ex" data-act="open-add">+ Add exercise</button>
     <div class="wk-actions">
@@ -543,7 +585,7 @@ function exCard(e) {
   }).join('');
   const delLabel = S.confirmEx === e.id ? 'Tap again to remove' : 'Remove';
   return `<article class="ex">
-    <div class="ex-top"><h3>${esc(e.name)}</h3><button class="rest-chip tnum" data-act="rest" data-ex="${e.id}" aria-label="Rest time, tap to change">Rest ${mmss(e.rest)}</button></div>
+    <div class="ex-top"><div><h3>${esc(e.name)}</h3>${e.target ? `<p class="target tnum">Aim for ${esc(e.target)} reps</p>` : ''}</div><button class="rest-chip tnum" data-act="rest" data-ex="${e.id}" aria-label="Rest time, tap to change">Rest ${mmss(e.rest)}</button></div>
     <p class="last tnum">${last ? `Last time (${day(last.date)}): ${summarizeSets(last.sets)}` : 'First time logging this one'}</p>
     <div class="sets"><div class="sets-head"><span>Set</span><span style="text-align:center">kg</span><span></span><span style="text-align:center">Reps</span><span></span></div>${rows}</div>
     <div class="ex-foot"><button class="btn btn-line" data-act="add-set" data-ex="${e.id}">+ Set</button>
@@ -555,7 +597,7 @@ function exCard(e) {
 function historyView() {
   const mon = new Date(); mon.setHours(0, 0, 0, 0); mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7));
   const week = S.history.filter(w => w.startedAt >= mon.getTime());
-  const sync = `<b>App version 2</b> · Saved on this phone and works with no internet. Export a backup now and then so you don't lose anything if you delete the app.
+  const sync = `<b>App version 3</b> · Saved on this phone and works with no internet. Export a backup now and then so you don't lose anything if you delete the app.
     <span class="backup"><button class="btn btn-line" data-act="export">Export backup</button>
     <label class="btn btn-line" for="import-file">Import backup</label><input type="file" id="import-file" accept="application/json,.json" hidden></span>`;
   const head = `<h1>History</h1>
@@ -656,9 +698,15 @@ document.addEventListener('click', ev => {
       const nm = S.edit.exercises[+b.dataset.i], v = Math.min(10, Math.max(1, setsOf(S.edit, nm) + +b.dataset.d));
       S.edit.sets = { ...(S.edit.sets || {}), [nm]: v }; render(); break;
     }
+    case 'ed-rest': {
+      const nm = S.edit.exercises[+b.dataset.i], v = Math.min(600, Math.max(15, restOf(S.edit, nm) + +b.dataset.d));
+      S.edit.rest = { ...(S.edit.rest || {}), [nm]: v }; render(); break;
+    }
     case 'ed-save': {
       const list = templates().slice(), t = { ...S.edit, name: S.edit.name.trim() }, i = list.findIndex(x => x.id === t.id);
       t.sets = Object.fromEntries(t.exercises.map(n => [n, setsOf(S.edit, n)]));
+      t.rest = Object.fromEntries(t.exercises.filter(n => !isRun(n)).map(n => [n, restOf(S.edit, n)]));
+      t.reps = Object.fromEntries(t.exercises.filter(n => repsOf(S.edit, n).trim()).map(n => [n, repsOf(S.edit, n).trim()]));
       if (i >= 0) list[i] = t; else list.push(t);
       saveTemplates(list); S.edit = null; render(); flash(`Saved “${t.name}”`); break;
     }
@@ -670,7 +718,9 @@ document.addEventListener('click', ev => {
       if (!a.exercises.length) { flash('Add an exercise first.'); break; }
       const i = list.findIndex(t => t.name.toLowerCase() === name.toLowerCase());
       const t = { id: i >= 0 ? list[i].id : 't-' + rid(), name, exercises: a.exercises.map(e => e.name),
-        sets: Object.fromEntries(a.exercises.map(e => [e.name, e.sets.length])) };
+        sets: Object.fromEntries(a.exercises.map(e => [e.name, e.sets.length])),
+        rest: Object.fromEntries(a.exercises.filter(e => !e.run).map(e => [e.name, e.rest])),
+        reps: Object.fromEntries(a.exercises.filter(e => e.target).map(e => [e.name, e.target])) };
       if (i >= 0) list[i] = t; else list.push(t);
       saveTemplates(list); flash(i >= 0 ? `Updated “${name}”` : `Saved “${name}” to your workouts`); break;
     }
@@ -724,6 +774,7 @@ document.addEventListener('input', ev => {
   const t = ev.target;
   if (t.id === 'ex-search') return renderOpts();
   if (t.id === 'wk-name' && S.active) { S.active.name = t.value; return touch(); }
+  if (t.dataset.edReps != null && S.edit) { const nm = S.edit.exercises[+t.dataset.edReps]; S.edit.reps = { ...(S.edit.reps || {}), [nm]: t.value }; return; }
   if (t.id === 'ed-name' && S.edit) {
     S.edit.name = t.value;
     const ok = !!(t.value.trim() && S.edit.exercises.length);

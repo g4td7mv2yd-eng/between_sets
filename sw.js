@@ -1,7 +1,7 @@
 // Keeps Between Sets working with no internet.
 // App files: try the network first (so updates show up right away), fall back to the saved copy
 // after 3 seconds or when offline. Fonts: saved copy first, since they never change.
-const CACHE = 'between-sets-v2';
+const CACHE = 'between-sets-v3';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
